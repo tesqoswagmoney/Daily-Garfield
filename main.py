@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import tasks, commands
 import os
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import asyncio
 from playwright.async_api import async_playwright
@@ -53,6 +53,7 @@ def save_role_data(data):
 role_data = load_role_data()
 
 IMAGE_SOURCE_FILE = 'image_sources.json'
+ES_IMAGE_SOURCE_FILE = 'es_image_sources.json'
 
 if os.path.exists(IMAGE_SOURCE_FILE):
     with open(IMAGE_SOURCE_FILE, 'r') as f:
@@ -60,9 +61,20 @@ if os.path.exists(IMAGE_SOURCE_FILE):
 else:
     image_sources = {}
 
-async def webRequest(formatted_date):
+IMAGE_SOURCE_FILE = 'image_sources.json'
+
+if os.path.exists(ES_IMAGE_SOURCE_FILE):
+    with open(ES_IMAGE_SOURCE_FILE, 'r') as f:
+        es_image_sources = json.load(f)
+else:
+    es_image_sources = {}
+
+async def webRequest(formatted_date, lang):
     async with async_playwright() as p:
-        url = f"https://www.gocomics.com/heathcliff/{formatted_date}" #forms the correct url to the page based upon the day
+        if lang == "ES":
+            url = f"https://www.gocomics.com/heathcliffespanol/{formatted_date}" #forms the correct url to the page based upon the day
+        else:
+            url = f"https://www.gocomics.com/heathcliff/{formatted_date}" #forms the correct url to the page based upon the day
 
         print("beginning process to obtain image source")
         browser = await p.firefox.launch(headless=True)
@@ -85,8 +97,19 @@ async def webRequest(formatted_date):
 
 
 
-async def obtainHeathcliffSource(formatted_date):
+async def obtainHeathcliffSource(formatted_date,lang):
 
+    if lang == "ES":
+        # Check if the date requested is stored in the Spanish dictionary
+        datesrc = es_image_sources.get(formatted_date)
+
+        if datesrc:
+            src = datesrc  # Obtain source URL from the Spanish dictionary for the date
+            print("Image source obtained from the Spanish dictionary.")
+        else:
+            print("running web request for Spanish")
+            src = await webRequest(formatted_date, lang)
+        return src
     # Check if the date requested is stored in the dictionary
     datesrc = image_sources.get(formatted_date)
 
@@ -95,7 +118,7 @@ async def obtainHeathcliffSource(formatted_date):
         print("Image source obtained from the dictionary.")
     else:
         print("running web request")
-        src = await webRequest(formatted_date)
+        src = await webRequest(formatted_date, lang)
     return src
 
 # async def waitUntil(end_hour,end_minute,end_second):
@@ -123,7 +146,7 @@ async def obtainHeathcliffSource(formatted_date):
 async def send_daily_message():
     now = datetime.utcnow() #this is depreciated we should probably replace it
     formatted_date = now.strftime("%Y/%m/%d")
-    imgsrc = await webRequest(formatted_date)
+    imgsrc = await webRequest(formatted_date, "EN")
     print("obtained source within the 24 hour loop")
 
     for guild_id, channel_id in channel_data.items():
@@ -201,22 +224,35 @@ async def resetrole(interaction: discord.Interaction):
 @app_commands.allowed_installs(guilds=True, users=True)
 @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True) # all allowed
 @app_commands.checks.has_permissions()
-async def sendnow(interaction: discord.Interaction, date: str = None):
+@app_commands.choices(lang=[app_commands.Choice(name="EN", value="EN"), app_commands.Choice(name="ES", value="ES")])
+async def sendnow(interaction: discord.Interaction, date: str = None, lang: str = "EN"):
     # Check for date parameter; default to today if not provided
     if date is None:
         now = datetime.utcnow()
-        formatted_date = now.strftime("%Y/%m/%d")
+        if lang == "ES":
+            formatted_date = (now - timedelta(days=1)).strftime("%Y/%m/%d")
+        else:
+            formatted_date = now.strftime("%Y/%m/%d")
         await interaction.response.send_message("Sending Heathcliff!")
+        
     else:
         try:
             # Try to parse the provided date
             formatted_date = datetime.strptime(date, "%Y/%m/%d").strftime("%Y/%m/%d")
             parsed_date = datetime.strptime(date, "%Y/%m/%d")
+          
+            
 
             # Check if the date is prior to the minimum date, since otherwise it will get stuck in a loop
             if parsed_date.year < 2002:
-                await interaction.response.send_message("The year must be 2002 or later. Please use a valid date.", ephemeral=True)
+                await interaction.response.send_message("The year must be 2002 or later. Please use a later date.", ephemeral=True)
                 return
+
+            # Spanish archive starts later — enforce minimum for ES
+            if lang == "ES" and parsed_date < datetime(2012, 5, 21):
+                await interaction.response.send_message("Los archivos españoles solo llegan hasta el 21/05/2012. Por favor, utilice una fecha posterior.", ephemeral=True)
+                return
+            
             
         except ValueError:
             await interaction.response.send_message("Invalid date format. Please use YYYY/MM/DD.")
@@ -224,7 +260,7 @@ async def sendnow(interaction: discord.Interaction, date: str = None):
         await interaction.response.send_message("Sending Heathcliff!")
     
     # Obtain the image source using the formatted date
-    imgsrc = await obtainHeathcliffSource(formatted_date)
+    imgsrc = await obtainHeathcliffSource(formatted_date, lang)
     print(imgsrc)
     
     # Send the image source in a message
