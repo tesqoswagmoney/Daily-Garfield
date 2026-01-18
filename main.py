@@ -231,9 +231,10 @@ async def sendnow(interaction: discord.Interaction, date: str = None, lang: str 
         now = datetime.utcnow()
         if lang == "ES":
             formatted_date = (now - timedelta(days=1)).strftime("%Y/%m/%d")
+            await interaction.response.send_message("¡Enviando a Heathcliff!")
         else:
             formatted_date = now.strftime("%Y/%m/%d")
-        await interaction.response.send_message("Sending Heathcliff!")
+            await interaction.response.send_message("Sending Heathcliff!")
         
     else:
         try:
