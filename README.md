@@ -1,5 +1,5 @@
-# Daily-Heathcliff
-A Discord bot which sends the daily Heathcliff comic from Gocomics everyday
+# Daily-Garfield
+A Discord bot which sends the daily Garfield comic from Gocomics everyday
 
 # Run
 
